@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="da">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Quizmaster</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+
+    <link rel="stylesheet"
+          href="{{ url_for('static', filename='style.css') }}">
+</head>
+
+<body>
+
+<div class="topbar">
+    <h1 id="title">Musik Jeopardy</h1>
+
+    <div class="nav-links">
+        <a href="/audience" target="_blank">Publikum</a>
+        <a href="/buzzer" target="_blank">Buzzer</a>
+    </div>
+</div>
+
+<div id="roundButtons" class="round-buttons"></div>
+
+<div id="scoreboard" class="scoreboard">
+    Ingen hold er tjekket ind endnu
+</div>
+
+<div id="buzzStatus" class="buzz-status">
+    Ingen har buzzet endnu
+</div>
+
+<div id="timerStatus" class="timer-status"></div>
+
+<div class="host-actions">
+    <button onclick="resetBuzz()">Nulstil buzzer</button>
+    <button onclick="cancelQuestion()">Fortryd aktivt spørgsmål</button>
+    <button class="danger-button" onclick="resetGame()">Nulstil hele spillet</button>
+</div>
+
+<div id="board" class="board"></div>
+
+<div id="questionModal" class="modal">
+    <div class="modal-content">
+        <h2 id="modalTitle"></h2>
+
+        <p id="modalQuestion" class="modal-question"></p>
+
+        <div id="goldExtra" class="gold-extra"></div>
+
+        <button onclick="showAnswer()">Vis svar</button>
+
+        <p id="modalAnswer" class="answer"></p>
+
+        <div id="musicControls" class="music-controls"></div>
+
+        <div id="buzzWinnerArea"></div>
+
+        <div id="pointsArea" class="points-area"></div>
+
+        <button onclick="closeQuestion()">
+            Ingen point / afslut spørgsmål
+        </button>
+    </div>
+</div>
+
+<script>
+    let statusData = null;
+    let currentActiveKey = null;
+
+    async function apiPost(url, payload = {}) {
+        const response = await fetch(url, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify(payload)
+        });
+
+        return await response.json();
+    }
+
+    async function fetchStatus() {
+        const response = await fetch("/status");
+        statusData = await response.json();
+
+        renderAll();
+    }
+
+    function renderAll() {
+        if (!statusData) return;
+
+        document.getElementById("title").innerText = statusData.title;
+
+        renderRoundButtons();
+        renderScoreboard();
+        renderBuzzStatus();
+        renderTimerStatus();
+        renderBoard();
+        renderModalIfActive();
+    }
+
+    function renderRoundButtons() {
+        const container = document.getElementById("roundButtons");
+        container.innerHTML = "";
+
+        statusData.rounds.forEach(function(round, index) {
+            const button = document.createElement("button");
+            button.innerText = round.name;
+
+            if (index === statusData.current_round_index) {
+                button.classList.add("active-round");
+            }
+
+            button.onclick = async function() {
+                await apiPost("/switch_round", {
+                    round_index: index
+                });
+
+                await fetchStatus();
+            };
+
+            container.appendChild(button);
+        });
+    }
+
+    function renderScoreboard() {
+        const scoreboard = document.getElementById("scoreboard");
+        const teams = statusData.teams;
+        const teamNames = Object.keys(teams);
+
+        if (teamNames.length === 0) {
+            scoreboard.innerText = "Ingen hold er tjekket ind endnu";
+            return;
+        }
+
+        scoreboard.innerHTML = teamNames
+            .map(team => `<span>${team}: ${teams[team]}</span>`)
+            .join(" | ");
+    }
+
+    function renderBuzzStatus() {
+        const buzzStatus = document.getElementById("buzzStatus");
+
+        if (statusData.current_buzz) {
+            buzzStatus.innerText = "🏆 Først på buzzeren: " + statusData.current_buzz;
+        } else if (statusData.phase === "awaiting_buzz") {
+            buzzStatus.innerText = "Afventer buzz fra holdene";
+        } else {
+            buzzStatus.innerText = "Ingen aktiv buzzer";
+        }
+    }
+
+    function renderTimerStatus() {
+        const timerStatus = document.getElementById("timerStatus");
+
+        if (statusData.timer_remaining === null) {
+            timerStatus.innerText = "";
+            return;
+        }
+
+        if (statusData.phase === "awaiting_buzz") {
+            timerStatus.innerText = "Buzz-tid: " + statusData.timer_remaining;
+        } else if (statusData.phase === "answering") {
+            timerStatus.innerText = "Svartid: " + statusData.timer_remaining;
+        } else {
+            timerStatus.innerText = "";
+        }
+    }
+
+    function renderBoard() {
+        const board = document.getElementById("board");
+        board.innerHTML = "";
+
+        const round = statusData.rounds[statusData.current_round_index];
+
+        round.categories.forEach(function(category, categoryIndex) {
+            const column = document.createElement("div");
+            column.className = "category-column";
+
+            const header = document.createElement("div");
+            header.className = "category-header";
+            header.innerText = category.name;
+            column.appendChild(header);
+
+            category.questions.forEach(function(question, questionIndex) {
+                const button = document.createElement("button");
+                button.className = "question-button";
+                button.innerText = question.points;
+
+                // Guldspørgsmål må IKKE afsløres på boardet.
+                // Derfor tilføjes der ikke gold-class her.
+
+                if (question.used) {
+                    button.classList.add("used");
+                    button.disabled = true;
+                }
+
+                button.onclick = async function() {
+                    await apiPost("/open_question", {
+                        round_index: statusData.current_round_index,
+                        category_index: categoryIndex,
+                        question_index: questionIndex
+                    });
+
+                    await fetchStatus();
+                };
+
+                column.appendChild(button);
+            });
+
+            board.appendChild(column);
+        });
+    }
+
+    function renderModalIfActive() {
+        const modal = document.getElementById("questionModal");
+        const active = statusData.active_question;
+
+        if (!active) {
+            modal.style.display = "none";
+            currentActiveKey = null;
+            return;
+        }
+
+        if (currentActiveKey !== active.key) {
+            document.getElementById("modalAnswer").innerText = "";
+            currentActiveKey = active.key;
+        }
+
+        document.getElementById("modalTitle").innerText =
+            active.category_name + " - " + active.points + (active.gold ? " 🏆 GULDSPØRGSMÅL" : "");
+
+        document.getElementById("modalQuestion").innerText = active.question;
+
+        const goldExtra = document.getElementById("goldExtra");
+        goldExtra.innerHTML = "";
+
+        if (active.gold && active.question2) {
+            goldExtra.innerHTML =
+                `<div class="gold-box">
+                    <strong>Guldspørgsmål del 2:</strong>
+                    <p>${active.question2}</p>
+                </div>`;
+        }
+
+        renderMusicControls(active);
+        renderPointControls(active);
+
+        modal.style.display = "flex";
+    }
+
+    function renderMusicControls(active) {
+        const container = document.getElementById("musicControls");
+        container.innerHTML = "";
+
+        if (!active.music) return;
+
+        if (statusData.phase === "music_intro") {
+            const info = document.createElement("p");
+            info.innerText = "Musikspørgsmål: Afspil klippet eksternt fra din playliste.";
+
+            const button = document.createElement("button");
+            button.innerText = "Vis spørgsmål + start buzz-timer";
+            button.onclick = async function() {
+                await apiPost("/reveal_question");
+                await fetchStatus();
+            };
+
+            container.appendChild(info);
+            container.appendChild(button);
+        }
+    }
+
+    function renderPointControls(active) {
+        const pointsArea = document.getElementById("pointsArea");
+        const buzzWinnerArea = document.getElementById("buzzWinnerArea");
+
+        pointsArea.innerHTML = "";
+        buzzWinnerArea.innerHTML = "";
+
+        if (statusData.phase === "music_intro") {
+            buzzWinnerArea.innerHTML = "<h3>Afventer musikklip</h3>";
+            return;
+        }
+
+        if (!statusData.current_buzz) {
+            buzzWinnerArea.innerHTML = "<h3>Afventer buzz fra holdene</h3>";
+            return;
+        }
+
+        buzzWinnerArea.innerHTML = "<h3>🏆 " + statusData.current_buzz + "</h3>";
+
+        if (active.gold) {
+            const oneCorrectButton = document.createElement("button");
+            oneCorrectButton.innerText = "Korrekt på ét spørgsmål (+" + active.points + ")";
+            oneCorrectButton.onclick = async function() {
+                await apiPost("/answer_correct", { mode: "single" });
+                await fetchStatus();
+            };
+
+            const bothCorrectButton = document.createElement("button");
+            bothCorrectButton.innerText = "Korrekt på begge spørgsmål (+" + (active.points * 2) + ")";
+            bothCorrectButton.onclick = async function() {
+                await apiPost("/answer_correct", { mode: "double" });
+                await fetchStatus();
+            };
+
+            pointsArea.appendChild(oneCorrectButton);
+            pointsArea.appendChild(bothCorrectButton);
+        } else {
+            const correctButton = document.createElement("button");
+            correctButton.innerText = "Korrekt (+" + active.points + ")";
+            correctButton.onclick = async function() {
+                await apiPost("/answer_correct", { mode: "normal" });
+                await fetchStatus();
+            };
+
+            pointsArea.appendChild(correctButton);
+        }
+
+        const wrongButton = document.createElement("button");
+        wrongButton.innerText = "Forkert (-" + active.points + ")";
+        wrongButton.onclick = async function() {
+            await apiPost("/answer_wrong");
+            await fetchStatus();
+        };
+
+        pointsArea.appendChild(wrongButton);
+    }
+
+    function showAnswer() {
+        const active = statusData.active_question;
+        if (!active) return;
+
+        let answerText = "Svar: " + active.answer;
+
+        if (active.gold && active.answer2) {
+            answerText += "\n\nSvar del 2: " + active.answer2;
+        }
+
+        document.getElementById("modalAnswer").innerText = answerText;
+    }
+
+    async function resetBuzz() {
+        await apiPost("/reset_buzz");
+        await fetchStatus();
+    }
+
+    async function closeQuestion() {
+        await apiPost("/close_question");
+        await fetchStatus();
+    }
+
+    async function cancelQuestion() {
+        await apiPost("/cancel_question");
+        await fetchStatus();
+    }
+
+    async function resetGame() {
+        const confirmed = confirm(
+            "Er du sikker på, at du vil nulstille hele spillet? Alle hold, point og brugte spørgsmål slettes."
+        );
+
+        if (!confirmed) return;
+
+        await apiPost("/reset_game");
+        await fetchStatus();
+    }
+
+    fetchStatus();
+    setInterval(fetchStatus, 1000);
+</script>
+
+</body>
+</html>
