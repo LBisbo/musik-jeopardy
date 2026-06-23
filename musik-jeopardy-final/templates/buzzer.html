@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="da">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Buzzer</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+
+    <link rel="stylesheet"
+          href="{{ url_for('static', filename='style.css') }}">
+</head>
+
+<body>
+
+<div class="buzzer-page">
+    <div id="joinBox">
+        <h1>🎵 Musik Jeopardy</h1>
+
+        <label for="teamNameInput">Holdnavn</label>
+
+        <input
+            type="text"
+            id="teamNameInput"
+            placeholder="Skriv holdnavn">
+
+        <button onclick="joinTeam()">
+            Tjek ind
+        </button>
+    </div>
+
+    <div id="buzzBox" style="display: none;">
+        <h1>Velkommen</h1>
+        <h2 id="teamNameDisplay"></h2>
+
+        <button class="big-buzzer-button" onclick="buzz()">
+            BUZZ
+        </button>
+
+        <p id="buzzMessage"></p>
+        <p id="phaseMessage"></p>
+
+        <button onclick="changeTeam()" class="secondary-button">
+            Skift holdnavn
+        </button>
+    </div>
+</div>
+
+<script>
+    let teamName = localStorage.getItem("musikJeopardyTeamName");
+
+    async function apiPost(url, payload = {}) {
+        const response = await fetch(url, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify(payload)
+        });
+
+        return await response.json();
+    }
+
+    async function joinTeam() {
+        const input = document.getElementById("teamNameInput");
+        const name = input.value.trim();
+
+        if (!name) {
+            alert("Skriv et holdnavn først");
+            return;
+        }
+
+        const result = await apiPost("/join", {
+            team_name: name
+        });
+
+        if (result.ok) {
+            teamName = name;
+            localStorage.setItem("musikJeopardyTeamName", name);
+            showBuzzBox();
+        }
+    }
+
+    function showBuzzBox() {
+        document.getElementById("joinBox").style.display = "none";
+        document.getElementById("buzzBox").style.display = "block";
+        document.getElementById("teamNameDisplay").innerText = teamName;
+    }
+
+    function changeTeam() {
+        localStorage.removeItem("musikJeopardyTeamName");
+        teamName = null;
+
+        document.getElementById("joinBox").style.display = "block";
+        document.getElementById("buzzBox").style.display = "none";
+    }
+
+    async function buzz() {
+        if (!teamName) return;
+
+        const result = await apiPost("/buzz", {
+            team_name: teamName
+        });
+
+        if (result.current_buzz === teamName) {
+            document.getElementById("buzzMessage").innerText =
+                "🏆 I buzzede først!";
+        } else if (result.current_buzz) {
+            document.getElementById("buzzMessage").innerText =
+                result.current_buzz + " buzzede først.";
+        } else {
+            document.getElementById("buzzMessage").innerText =
+                result.message || "Buzzeren er ikke åben lige nu.";
+        }
+    }
+
+    async function fetchStatus() {
+        const response = await fetch("/status");
+        const data = await response.json();
+
+        const phaseMessage = document.getElementById("phaseMessage");
+
+        if (!phaseMessage) return;
+
+        if (data.phase === "awaiting_buzz") {
+            phaseMessage.innerText =
+                "Buzzeren er åben. Tid: " + data.timer_remaining;
+        } else if (data.phase === "answering") {
+            if (data.current_buzz === teamName) {
+                phaseMessage.innerText = "Det er jeres tur til at svare.";
+            } else {
+                phaseMessage.innerText =
+                    "Afventer svar fra " + data.current_buzz;
+            }
+        } else {
+            phaseMessage.innerText = "Afvent næste spørgsmål.";
+        }
+    }
+
+    if (teamName) {
+        apiPost("/join", { team_name: teamName }).then(showBuzzBox);
+    }
+
+    fetchStatus();
+    setInterval(fetchStatus, 1000);
+</script>
+
+</body>
+</html>
