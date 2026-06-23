@@ -46,6 +46,7 @@ button:hover {
 
 button:disabled {
     cursor: default;
+    opacity: 0.55;
 }
 
 .round-buttons,
@@ -142,22 +143,38 @@ button:disabled {
     color: #3e0044;
     padding: 35px;
     border-radius: 24px;
-    width: min(760px, 92vw);
+    width: min(840px, 92vw);
     max-height: 90vh;
     overflow-y: auto;
     text-align: center;
     box-shadow: 0 20px 50px rgba(62, 0, 68, 0.35);
 }
 
-.modal-question,
 .modal-content p {
-    font-size: 24px;
+    font-size: 22px;
 }
 
-.answer {
-    white-space: pre-line;
+.host-note {
+    background-color: #f3d7ec;
+    border: 2px solid #8b668f;
+    border-radius: 16px;
+    padding: 16px;
+    margin: 16px 0;
+    font-size: 20px;
     font-weight: bold;
-    margin-top: 25px;
+}
+
+.preview-box,
+.host-question,
+.host-answer {
+    background-color: rgba(255, 255, 255, 0.28);
+    border-radius: 16px;
+    padding: 14px;
+    margin: 12px 0;
+}
+
+.host-answer {
+    font-weight: bold;
 }
 
 .points-area {
@@ -176,11 +193,6 @@ button:disabled {
     border-radius: 16px;
     padding: 15px;
     margin: 15px 0;
-}
-
-.music-controls {
-    margin: 20px 0;
-    font-weight: bold;
 }
 
 .audience-question {
@@ -205,7 +217,7 @@ button:disabled {
 }
 
 .audience-timer {
-    font-size: 58px;
+    font-size: 72px;
     font-weight: bold;
     margin-top: 30px;
 }
