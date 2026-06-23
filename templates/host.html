@@ -28,7 +28,7 @@
 </div>
 
 <div id="buzzStatus" class="buzz-status">
-    Ingen har buzzet endnu
+    Ingen aktiv buzzer
 </div>
 
 <div id="timerStatus" class="timer-status"></div>
@@ -45,29 +45,26 @@
     <div class="modal-content">
         <h2 id="modalTitle"></h2>
 
-        <p id="modalQuestion" class="modal-question"></p>
+        <div id="hostNoteArea"></div>
 
-        <div id="goldExtra" class="gold-extra"></div>
+        <div id="previewControls"></div>
 
-        <button onclick="showAnswer()">Vis svar</button>
+        <div id="questionArea"></div>
 
-        <p id="modalAnswer" class="answer"></p>
-
-        <div id="musicControls" class="music-controls"></div>
+        <div id="answerArea"></div>
 
         <div id="buzzWinnerArea"></div>
 
         <div id="pointsArea" class="points-area"></div>
 
         <button onclick="closeQuestion()">
-            Ingen point / afslut spørgsmål
+            Afbryd spørgsmål / afslut uden point
         </button>
     </div>
 </div>
 
 <script>
     let statusData = null;
-    let currentActiveKey = null;
 
     async function apiPost(url, payload = {}) {
         const response = await fetch(url, {
@@ -145,8 +142,10 @@
 
         if (statusData.current_buzz) {
             buzzStatus.innerText = "🏆 Først på buzzeren: " + statusData.current_buzz;
-        } else if (statusData.phase === "awaiting_buzz") {
-            buzzStatus.innerText = "Afventer buzz fra holdene";
+        } else if (statusData.phase === "question_open") {
+            buzzStatus.innerText = "Buzzeren er åben";
+        } else if (statusData.phase === "preview") {
+            buzzStatus.innerText = "Spørgsmål valgt - buzzeren er lukket";
         } else {
             buzzStatus.innerText = "Ingen aktiv buzzer";
         }
@@ -160,10 +159,10 @@
             return;
         }
 
-        if (statusData.phase === "awaiting_buzz") {
-            timerStatus.innerText = "Buzz-tid: " + statusData.timer_remaining;
-        } else if (statusData.phase === "answering") {
-            timerStatus.innerText = "Svartid: " + statusData.timer_remaining;
+        if (statusData.phase === "answering") {
+            timerStatus.innerText =
+                "Svartid: " + statusData.timer_remaining +
+                " sek. | Forsøg " + statusData.attempt_number;
         } else {
             timerStatus.innerText = "";
         }
@@ -189,8 +188,7 @@
                 button.className = "question-button";
                 button.innerText = question.points;
 
-                // Guldspørgsmål må IKKE afsløres på boardet.
-                // Derfor tilføjes der ikke gold-class her.
+                // Guldspørgsmål afsløres ikke på boardet.
 
                 if (question.used) {
                     button.classList.add("used");
@@ -220,57 +218,95 @@
 
         if (!active) {
             modal.style.display = "none";
-            currentActiveKey = null;
             return;
         }
 
-        if (currentActiveKey !== active.key) {
-            document.getElementById("modalAnswer").innerText = "";
-            currentActiveKey = active.key;
-        }
-
         document.getElementById("modalTitle").innerText =
-            active.category_name + " - " + active.points + (active.gold ? " 🏆 GULDSPØRGSMÅL" : "");
+            active.category_name + " - " + active.points +
+            (active.gold && statusData.phase !== "preview" ? " 🏆 GULDSPØRGSMÅL" : "");
 
-        document.getElementById("modalQuestion").innerText = active.question;
-
-        const goldExtra = document.getElementById("goldExtra");
-        goldExtra.innerHTML = "";
-
-        if (active.gold && active.question2) {
-            goldExtra.innerHTML =
-                `<div class="gold-box">
-                    <strong>Guldspørgsmål del 2:</strong>
-                    <p>${active.question2}</p>
-                </div>`;
-        }
-
-        renderMusicControls(active);
+        renderHostNote(active);
+        renderPreviewControls(active);
+        renderQuestionAndAnswer(active);
         renderPointControls(active);
 
         modal.style.display = "flex";
     }
 
-    function renderMusicControls(active) {
-        const container = document.getElementById("musicControls");
-        container.innerHTML = "";
+    function renderHostNote(active) {
+        const area = document.getElementById("hostNoteArea");
+        area.innerHTML = "";
 
-        if (!active.music) return;
+        if (active.music || active.host_note) {
+            let html = `<div class="host-note">`;
 
-        if (statusData.phase === "music_intro") {
-            const info = document.createElement("p");
-            info.innerText = "Musikspørgsmål: Afspil klippet eksternt fra din playliste.";
+            if (active.music) {
+                html += `<strong>🎵 Musikspørgsmål</strong><br>`;
+            }
 
-            const button = document.createElement("button");
-            button.innerText = "Vis spørgsmål + start buzz-timer";
-            button.onclick = async function() {
-                await apiPost("/reveal_question");
-                await fetchStatus();
-            };
+            if (active.host_note) {
+                html += active.host_note;
+            } else if (active.music) {
+                html += "Afspil musik manuelt fra din playliste, før du viser spørgsmålet.";
+            }
 
-            container.appendChild(info);
-            container.appendChild(button);
+            html += `</div>`;
+            area.innerHTML = html;
         }
+    }
+
+    function renderPreviewControls(active) {
+        const area = document.getElementById("previewControls");
+        area.innerHTML = "";
+
+        if (statusData.phase === "preview") {
+            area.innerHTML = `
+                <div class="preview-box">
+                    <p>Publikum ser kun kategori og point.</p>
+                    <button onclick="revealQuestion()">Vis spørgsmål</button>
+                </div>
+            `;
+        }
+    }
+
+    function renderQuestionAndAnswer(active) {
+        const questionArea = document.getElementById("questionArea");
+        const answerArea = document.getElementById("answerArea");
+
+        let questionHtml = `
+            <div class="host-question">
+                <h3>Spørgsmål</h3>
+                <p>${active.question}</p>
+            </div>
+        `;
+
+        if (active.gold && active.question2) {
+            questionHtml += `
+                <div class="gold-box">
+                    <h3>Guldspørgsmål del 2</h3>
+                    <p>${active.question2}</p>
+                </div>
+            `;
+        }
+
+        let answerHtml = `
+            <div class="host-answer">
+                <h3>Svar</h3>
+                <p>${active.answer}</p>
+            </div>
+        `;
+
+        if (active.gold && active.answer2) {
+            answerHtml += `
+                <div class="host-answer">
+                    <h3>Svar del 2</h3>
+                    <p>${active.answer2}</p>
+                </div>
+            `;
+        }
+
+        questionArea.innerHTML = questionHtml;
+        answerArea.innerHTML = answerHtml;
     }
 
     function renderPointControls(active) {
@@ -280,17 +316,22 @@
         pointsArea.innerHTML = "";
         buzzWinnerArea.innerHTML = "";
 
-        if (statusData.phase === "music_intro") {
-            buzzWinnerArea.innerHTML = "<h3>Afventer musikklip</h3>";
+        if (statusData.phase === "preview") {
+            buzzWinnerArea.innerHTML = "<h3>Buzzeren er lukket</h3>";
             return;
         }
 
-        if (!statusData.current_buzz) {
+        if (statusData.phase === "question_open") {
             buzzWinnerArea.innerHTML = "<h3>Afventer buzz fra holdene</h3>";
             return;
         }
 
-        buzzWinnerArea.innerHTML = "<h3>🏆 " + statusData.current_buzz + "</h3>";
+        if (statusData.phase !== "answering" || !statusData.current_buzz) {
+            return;
+        }
+
+        buzzWinnerArea.innerHTML =
+            "<h3>🏆 " + statusData.current_buzz + " svarer</h3>";
 
         if (active.gold) {
             const oneCorrectButton = document.createElement("button");
@@ -330,17 +371,9 @@
         pointsArea.appendChild(wrongButton);
     }
 
-    function showAnswer() {
-        const active = statusData.active_question;
-        if (!active) return;
-
-        let answerText = "Svar: " + active.answer;
-
-        if (active.gold && active.answer2) {
-            answerText += "\n\nSvar del 2: " + active.answer2;
-        }
-
-        document.getElementById("modalAnswer").innerText = answerText;
+    async function revealQuestion() {
+        await apiPost("/reveal_question");
+        await fetchStatus();
     }
 
     async function resetBuzz() {

@@ -32,7 +32,7 @@
         <h1>Velkommen</h1>
         <h2 id="teamNameDisplay"></h2>
 
-        <button class="big-buzzer-button" onclick="buzz()">
+        <button id="buzzButton" class="big-buzzer-button" onclick="buzz()">
             BUZZ
         </button>
 
@@ -111,6 +111,8 @@
             document.getElementById("buzzMessage").innerText =
                 result.message || "Buzzeren er ikke åben lige nu.";
         }
+
+        fetchStatus();
     }
 
     async function fetchStatus() {
@@ -118,20 +120,28 @@
         const data = await response.json();
 
         const phaseMessage = document.getElementById("phaseMessage");
+        const buzzButton = document.getElementById("buzzButton");
 
-        if (!phaseMessage) return;
+        if (!phaseMessage || !buzzButton) return;
 
-        if (data.phase === "awaiting_buzz") {
-            phaseMessage.innerText =
-                "Buzzeren er åben. Tid: " + data.timer_remaining;
+        if (data.phase === "question_open") {
+            phaseMessage.innerText = "Buzzeren er åben!";
+            buzzButton.disabled = false;
         } else if (data.phase === "answering") {
+            buzzButton.disabled = true;
+
             if (data.current_buzz === teamName) {
-                phaseMessage.innerText = "Det er jeres tur til at svare.";
+                phaseMessage.innerText =
+                    "Det er jeres tur til at svare. Tid: " + data.timer_remaining;
             } else {
                 phaseMessage.innerText =
                     "Afventer svar fra " + data.current_buzz;
             }
+        } else if (data.phase === "preview") {
+            buzzButton.disabled = true;
+            phaseMessage.innerText = "Spørgsmålet er valgt. Afvent quizmaster.";
         } else {
+            buzzButton.disabled = true;
             phaseMessage.innerText = "Afvent næste spørgsmål.";
         }
     }

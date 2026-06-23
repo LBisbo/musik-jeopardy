@@ -45,36 +45,50 @@
         const container = document.getElementById("audienceContent");
         container.innerHTML = "";
 
-        if (statusData.audience_view === "music_intro" && statusData.active_question) {
+        if (statusData.phase === "preview" && statusData.active_question) {
             const active = statusData.active_question;
 
             container.innerHTML = `
                 <div class="audience-question">
-                    <h2>${active.category_name} ${active.points}${active.gold ? " 🏆 GULDSPØRGSMÅL" : ""}</h2>
-                    <p>🎵 Lyt til musikklippet</p>
+                    <h2>${active.category_name}</h2>
+                    <p>${active.points}</p>
                 </div>
             `;
 
             return;
         }
 
-        if (statusData.audience_view === "question" && statusData.active_question) {
+        if ((statusData.phase === "question_open" || statusData.phase === "answering") && statusData.active_question) {
             const active = statusData.active_question;
 
-            let timer = "";
-            if (statusData.timer_remaining !== null) {
-                if (statusData.phase === "awaiting_buzz") {
-                    timer = `<div class="audience-timer">Buzz-tid: ${statusData.timer_remaining}</div>`;
-                } else if (statusData.phase === "answering") {
-                    timer = `<div class="audience-timer">Svartid: ${statusData.timer_remaining}</div>`;
+            if (statusData.phase === "answering" && statusData.current_buzz) {
+                let timer = "";
+
+                if (statusData.timer_remaining !== null) {
+                    timer = `<div class="audience-timer">${statusData.timer_remaining}</div>`;
                 }
+
+                container.innerHTML = `
+                    <div class="audience-question ${active.gold ? "gold-question" : ""}">
+                        <h2>${active.gold ? "🏆 GULDSPØRGSMÅL" : active.category_name + " " + active.points}</h2>
+                        <p>🏆 ${statusData.current_buzz} svarer</p>
+                        ${timer}
+                    </div>
+                `;
+
+                return;
+            }
+
+            let questionHtml = `<p>${active.question}</p>`;
+
+            if (active.gold && active.question2) {
+                questionHtml += `<p>${active.question2}</p>`;
             }
 
             container.innerHTML = `
                 <div class="audience-question ${active.gold ? "gold-question" : ""}">
-                    <h2>${active.category_name} ${active.points}${active.gold ? " 🏆 GULDSPØRGSMÅL" : ""}</h2>
-                    <p>${active.question}</p>
-                    ${timer}
+                    <h2>${active.gold ? "🏆 GULDSPØRGSMÅL" : active.category_name + " " + active.points}</h2>
+                    ${questionHtml}
                 </div>
             `;
 
@@ -114,8 +128,7 @@
                 button.innerText = question.points;
                 button.disabled = true;
 
-                // Guldspørgsmål må IKKE afsløres på boardet.
-                // Derfor tilføjes der ikke gold-class her.
+                // Guldspørgsmål afsløres ikke på boardet.
 
                 if (question.used) {
                     button.classList.add("used");
