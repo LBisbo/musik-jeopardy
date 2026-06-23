@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="da">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Publikum</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+
+    <link rel="stylesheet"
+          href="{{ url_for('static', filename='style.css') }}">
+</head>
+
+<body class="audience-body">
+
+<h1 id="audienceTitle">Musik Jeopardy</h1>
+
+<div id="audienceContent"></div>
+
+<script>
+    let statusData = null;
+
+    async function fetchStatus() {
+        const response = await fetch("/status");
+        statusData = await response.json();
+
+        renderAudience();
+    }
+
+    function scoreText() {
+        const teams = statusData.teams;
+        const teamNames = Object.keys(teams);
+
+        if (teamNames.length === 0) {
+            return "Hold tjekker ind...";
+        }
+
+        return teamNames
+            .map(team => `${team}: ${teams[team]}`)
+            .join(" | ");
+    }
+
+    function renderAudience() {
+        document.getElementById("audienceTitle").innerText = statusData.title;
+
+        const container = document.getElementById("audienceContent");
+        container.innerHTML = "";
+
+        if (statusData.audience_view === "music_intro" && statusData.active_question) {
+            const active = statusData.active_question;
+
+            container.innerHTML = `
+                <div class="audience-question">
+                    <h2>${active.category_name} ${active.points}${active.gold ? " 🏆" : ""}</h2>
+                    <p>🎵 Lyt til musikklippet</p>
+                </div>
+            `;
+
+            return;
+        }
+
+        if (statusData.audience_view === "question" && statusData.active_question) {
+            const active = statusData.active_question;
+
+            let timer = "";
+            if (statusData.timer_remaining !== null) {
+                if (statusData.phase === "awaiting_buzz") {
+                    timer = `<div class="audience-timer">Buzz-tid: ${statusData.timer_remaining}</div>`;
+                } else if (statusData.phase === "answering") {
+                    timer = `<div class="audience-timer">Svartid: ${statusData.timer_remaining}</div>`;
+                }
+            }
+
+            container.innerHTML = `
+                <div class="audience-question ${active.gold ? "gold-question" : ""}">
+                    <h2>${active.category_name} ${active.points}${active.gold ? " 🏆" : ""}</h2>
+                    <p>${active.question}</p>
+                    ${timer}
+                </div>
+            `;
+
+            return;
+        }
+
+        renderBoard(container);
+    }
+
+    function renderBoard(container) {
+        const round = statusData.rounds[statusData.current_round_index];
+
+        const roundTitle = document.createElement("h2");
+        roundTitle.innerText = round.name;
+        container.appendChild(roundTitle);
+
+        const scoreboard = document.createElement("div");
+        scoreboard.className = "scoreboard";
+        scoreboard.innerText = scoreText();
+        container.appendChild(scoreboard);
+
+        const board = document.createElement("div");
+        board.className = "board";
+
+        round.categories.forEach(function(category) {
+            const column = document.createElement("div");
+            column.className = "category-column";
+
+            const header = document.createElement("div");
+            header.className = "category-header";
+            header.innerText = category.name;
+            column.appendChild(header);
+
+            category.questions.forEach(function(question) {
+                const button = document.createElement("button");
+                button.className = "question-button";
+                button.innerText = question.points;
+                button.disabled = true;
+
+                if (question.gold) {
+                    button.classList.add("gold");
+                }
+
+                if (question.used) {
+                    button.classList.add("used");
+                }
+
+                column.appendChild(button);
+            });
+
+            board.appendChild(column);
+        });
+
+        container.appendChild(board);
+    }
+
+    fetchStatus();
+    setInterval(fetchStatus, 1000);
+</script>
+
+</body>
+</html>
